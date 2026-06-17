@@ -11,3 +11,8 @@ __pycache__/
 
 # Local runtime logs
 agent_output.log
+
+# Ignore archive binaries and installation packages
+*.tar.gz
+*.zip
+*.pkg
