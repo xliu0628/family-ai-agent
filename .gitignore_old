@@ -1,0 +1,9 @@
+# Python stuff
+__pycache__/
+*.py[cod]
+.venv/
+.env
+
+# Google Cloud Secrets (CRITICAL)
+client_secret.json
+token.json

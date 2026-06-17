@@ -1,0 +1,13 @@
+# Local token storage (Private Authentication)
+token.json
+credentials.json
+
+# Environment Secrets configuration
+.env
+
+# Python caching artifacts
+__pycache__/
+*.pyc
+
+# Local runtime logs
+agent_output.log
