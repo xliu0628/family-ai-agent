@@ -43,8 +43,7 @@ REDIRECT_URI = "http://127.0.0.1:8000/callback"
 
 
 # 3. THE WEB ROUTING ENDPOINTS
-
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")  # <-- Removed response_class=HTMLResponse
 def serve_dashboard(request: Request):
     """Serves the main frontend UI."""
     return templates.TemplateResponse("index.html", {"request": request})
