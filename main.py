@@ -4,7 +4,7 @@ import urllib.parse  # Added to manually build the login link
 from dotenv import load_dotenv
 
 # 1. ENVIRONMENT INITIALIZATION
-load_dotenv(dotenv_path="/Users/xjliu/ai-gmail-agent/.env")
+load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.responses import RedirectResponse
@@ -79,36 +79,44 @@ def callback(request: Request, code: str, state: str):
     """Catches the authenticated callback and executes the direct token trade."""
     if not supabase:
         raise HTTPException(status_code=500, detail="Database connection unconfigured.")
-        
+
+    # 1. Dynamically infer the redirect URI so it perfectly matches Step 1
+    redirect_target = os.environ.get("REDIRECT_URI")
+    if not redirect_target:
+        host = request.headers.get("host", "127.0.0.1:8000")
+        if "onrender.com" in host:
+            redirect_target = f"https://{host}/callback"
+        else:
+            redirect_target = f"http://{host}/callback"
+
     try:
         token_url = "https://oauth2.googleapis.com/token"
         payload = {
             "code": code,
             "client_id": os.environ.get("GOOGLE_CLIENT_ID"),
             "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET"),
-            "redirect_uri": REDIRECT_URI,
+            "redirect_uri": redirect_target,  # <-- THIS MUST BE redirect_target, NOT REDIRECT_URI
             "grant_type": "authorization_code"
         }
-        
+
         response = requests.post(token_url, data=payload)
         token_data = response.json()
-        
+
         if "error" in token_data:
             raise Exception(f"Google Server Error: {token_data.get('error_description', token_data['error'])}")
-            
+
         token_data["scopes"] = SCOPES
-        
+
         supabase.table("users_config").upsert({
             "user_id": state,
             "encrypted_gmail_token": token_data,
             "target_keywords": "ChangeMe"
         }).execute()
-        
+
         return {"status": "success", "message": f"Google Account linked for User ID: {state}!"}
-        
+
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Exchange failed: {str(e)}")
-
 
 # 4. MULTI-USER SWEEP AUTOMATION ROUTE
 
