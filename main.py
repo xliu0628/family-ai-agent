@@ -9,6 +9,7 @@ load_dotenv()
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
 from supabase import create_client, Client
 
 app = FastAPI(title="Family AI Assistant Multi-User API")
@@ -155,9 +156,42 @@ def execute_all_user_sweeps():
             
             sender_filter = user.get("target_sender", "*@seattleschools.org")
             keyword_filter = user.get("target_keywords", "ChangeMe")
-            
+           
+            run_agent_cycle(creds=user_creds, sender_filter=sender_filter, keyword_filter=keyword_filter) 
             print(f"🔍 Custom Filters -> Sender: {sender_filter} | Keywords: {keyword_filter}")
             print(f"✅ Completed processing logic run for user {user_id}")
             
     except Exception as e:
         print(f"❌ Error during global cloud sweep loop: {e}")
+
+def run_agent_cycle(creds, sender_filter, keyword_filter):
+    """Connects to Gmail, applies the user's custom filters, and fetches matching emails."""
+    print("\n🤖 --- Booting up Gmail Agent Brain ---")
+    try:
+        # Connect to the Gmail API using the re-hydrated cloud credentials
+        service = build('gmail', 'v1', credentials=creds)
+        
+        # Construct the advanced search query based on your Supabase user profile rules
+        # Example: "from:*@seattleschools.org (Eleanor OR Hazel) newer_than:2d"
+        query = f"from:{sender_filter} ({keyword_filter}) newer_than:2d"
+        print(f"🔍 Executing Live Inbox Search: [{query}]")
+        
+        # Execute the request
+        results = service.users().messages().list(userId='me', q=query).execute()
+        messages = results.get('messages', [])
+
+        if not messages:
+            print("📭 No new matching school emails found in the last 48 hours.")
+            return
+
+        print(f"📬 Success! Found {len(messages)} matching emails to analyze.")
+        
+        for msg in messages:
+            # Fetch full email snippet details for processing
+            msg_detail = service.users().messages().get(userId='me', id=msg['id'], format='snippet').execute()
+            print(f" 📄 Email ID {msg['id']} Snippet: {msg_detail.get('snippet')}")
+            
+        print("🧠 Emails extracted cleanly. Ready for Gemini parsing.")
+
+    except Exception as e:
+        print(f"❌ Error during Gmail scanning cycle: {e}")
