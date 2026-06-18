@@ -151,15 +151,16 @@ def execute_all_user_sweeps():
                 
             print(f"👤 Processing active agent cycle for User ID: {user_id}")
             
+            # 🛠️ FIX: Pull client ID and Secret from os.environ, NOT from the token_json
             user_creds = Credentials(
-                token=token_json.get("token"),
+                token=token_json.get("access_token"),
                 refresh_token=token_json.get("refresh_token"),
-                token_uri=token_json.get("token_uri"),
-                client_id=token_json.get("client_id"),
-                client_secret=token_json.get("client_secret"),
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=os.environ.get("GOOGLE_CLIENT_ID"),         # <-- Fixed
+                client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"), # <-- Fixed
                 scopes=token_json.get("scopes")
             )
-            
+ 
             sender_filter = user.get("target_sender", "*@seattleschools.org")
             keyword_filter = user.get("target_keywords", "ChangeMe")
            
