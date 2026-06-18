@@ -67,10 +67,12 @@ def login(user_id: str, request: Request):
         "redirect_uri": redirect_target,
         "response_type": "code",
         "scope": " ".join(SCOPES),
-        "access_type": "offline",
-        "prompt": "consent",
+        "access_type": "offline",         # Tells Google we need offline background access
+        "prompt": "consent",              # Forces the consent screen to guarantee refresh token delivery
+        "include_granted_scopes": "true", # Carries over existing permissions cleanly
         "state": user_id
     }
+
     
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     return RedirectResponse(auth_url)
