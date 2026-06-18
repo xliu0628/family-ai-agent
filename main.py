@@ -233,3 +233,63 @@ def run_agent_cycle(creds, sender_filter, keyword_filter):
 
     except Exception as e:
         print(f"❌ Error during Gmail scanning cycle: {e}")
+
+
+@app.get("/api/agent/test-gemini-parse")
+def test_gemini_parse():
+    """Simulates a raw school email snippet to test the Gemini LLM parser."""
+    print("\n🧪 --- Running Mock Gemini Parsing Test ---")
+    
+    gemini_api_key = os.environ.get("GEMINI_API_KEY")
+    if not gemini_api_key:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY is missing from Render environment.")
+        
+    # Initialize the client using the official google-genai library
+    from google import genai
+    ai_client = genai.Client(api_key=gemini_api_key)
+    
+    # A highly realistic, unstructured school newsletter email snippet
+    mock_snippet = (
+        "Hi parents, just a reminder that Eleanor has her kindergarten field trip to the Seattle Aquarium "
+        "this coming Friday, June 19th. The bus leaves at 9:00 AM and we will return by 1:30 PM. Please pack a sack lunch! "
+        "Also, the Hazel school library books must be returned by Monday morning."
+    )
+    
+    print(f"📄 Testing Mock Snippet: {mock_snippet}")
+    
+    prompt = f"""
+    You are a highly accurate calendar assistant. Read the following email snippet from a school.
+    Extract any upcoming events, dates, and times related to the students.
+    
+    Return ONLY a valid JSON array of objects with the following keys. Do not include markdown formatting or backticks.
+    - "event_name" (string)
+    - "date" (string, format YYYY-MM-DD if possible, guess the year based on context. Note: Current year is 2026)
+    - "time" (string, or "TBD" if not mentioned)
+    - "child_name" (string, e.g. Eleanor, Hazel, or "Both")
+    
+    If no events are found, return an empty array: []
+    
+    Email snippet: {mock_snippet}
+    """
+    
+    try:
+        response = ai_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt
+        )
+        print(f"🧠 Gemini Extracted JSON: {response.text}")
+        
+        # Parse text string into JSON array to return cleanly to the browser screen
+        import json
+        clean_text = response.text.replace("```json", "").replace("```", "").strip()
+        parsed_events = json.loads(clean_text)
+        
+        return {
+            "status": "success",
+            "mock_input_processed": mock_snippet,
+            "gemini_extracted_events": parsed_events
+        }
+        
+    except Exception as e:
+        print(f"❌ Gemini Processing Error: {e}")
+        raise HTTPException(status_code=400, detail=f"LLM Parsing failed: {str(e)}")
