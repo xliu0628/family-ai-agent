@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.responses import RedirectResponse
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from google import genai
 from supabase import create_client, Client
 
 app = FastAPI(title="Family AI Assistant Multi-User API")
@@ -172,18 +173,22 @@ def execute_all_user_sweeps():
         print(f"❌ Error during global cloud sweep loop: {e}")
 
 def run_agent_cycle(creds, sender_filter, keyword_filter):
-    """Connects to Gmail, applies the user's custom filters, and fetches matching emails."""
+    """Connects to Gmail, applies filters, and uses Gemini to extract calendar events."""
     print("\n🤖 --- Booting up Gmail Agent Brain ---")
-    try:
-        # Connect to the Gmail API using the re-hydrated cloud credentials
-        service = build('gmail', 'v1', credentials=creds)
+    
+    # 1. Initialize the Gemini Client
+    gemini_api_key = os.environ.get("GEMINI_API_KEY")
+    if not gemini_api_key:
+        print("❌ Error: GEMINI_API_KEY is missing from environment variables.")
+        return
         
-        # Construct the advanced search query based on your Supabase user profile rules
-        # Example: "from:*@seattleschools.org (Eleanor OR Hazel) newer_than:2d"
+    ai_client = genai.Client(api_key=gemini_api_key)
+
+    try:
+        service = build('gmail', 'v1', credentials=creds)
         query = f"from:{sender_filter} ({keyword_filter}) newer_than:2d"
         print(f"🔍 Executing Live Inbox Search: [{query}]")
         
-        # Execute the request
         results = service.users().messages().list(userId='me', q=query).execute()
         messages = results.get('messages', [])
 
@@ -194,11 +199,37 @@ def run_agent_cycle(creds, sender_filter, keyword_filter):
         print(f"📬 Success! Found {len(messages)} matching emails to analyze.")
         
         for msg in messages:
-            # Fetch full email snippet details for processing
             msg_detail = service.users().messages().get(userId='me', id=msg['id'], format='snippet').execute()
-            print(f" 📄 Email ID {msg['id']} Snippet: {msg_detail.get('snippet')}")
+            snippet = msg_detail.get('snippet', '')
+            print(f"\n📄 Analyzing Snippet: {snippet}")
             
-        print("🧠 Emails extracted cleanly. Ready for Gemini parsing.")
+            # 2. Instruct Gemini on exactly how to read and extract the data
+            prompt = f"""
+            You are a highly accurate calendar assistant. Read the following email snippet from a school.
+            Extract any upcoming events, dates, and times related to the students.
+            
+            Return ONLY a valid JSON array of objects with the following keys. Do not include markdown formatting or backticks.
+            - "event_name" (string)
+            - "date" (string, format YYYY-MM-DD if possible, guess the year based on context)
+            - "time" (string, or "TBD" if not mentioned)
+            - "child_name" (string, e.g. Eleanor, Hazel, or "Both")
+            
+            If no events are found, return an empty array: []
+            
+            Email snippet: {snippet}
+            """
+            
+            # 3. Call the Gemini API
+            try:
+                response = ai_client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=prompt
+                )
+                print(f"🧠 Gemini Extracted JSON: {response.text}")
+            except Exception as ai_error:
+                print(f"❌ Gemini Processing Error: {ai_error}")
+
+        print("\n✅ Cycle Complete. Ready for Calendar Booking.")
 
     except Exception as e:
         print(f"❌ Error during Gmail scanning cycle: {e}")
