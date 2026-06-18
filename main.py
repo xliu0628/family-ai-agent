@@ -1,0 +1,143 @@
+import os
+import requests
+import urllib.parse  # Added to manually build the login link
+from dotenv import load_dotenv
+
+# 1. ENVIRONMENT INITIALIZATION
+load_dotenv(dotenv_path="/Users/xjliu/ai-gmail-agent/.env")
+
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
+from fastapi.responses import RedirectResponse
+from google.oauth2.credentials import Credentials
+from supabase import create_client, Client
+
+app = FastAPI(title="Family AI Assistant Multi-User API")
+
+# --- 🔍 DEBUG ENVIRONMENT KEYS ---
+print("--- 🔍 DEBUG ENVIRONMENT KEYS ---")
+client_id = os.environ.get("GOOGLE_CLIENT_ID")
+client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+
+print(f"Loaded Client ID: {client_id}")
+print(f"Loaded Client Secret: {client_secret[:10] if client_secret else 'None'}...")
+print("---------------------------------")
+
+
+# 2. CLOUD DATABASE & INTEGRATIONS CONFIG
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
+
+SCOPES = [
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/calendar'
+]
+
+REDIRECT_URI = "http://127.0.0.1:8000/callback"
+
+
+# 3. THE WEB ROUTING ENDPOINTS
+
+@app.get("/")
+def read_root():
+    return {"status": "online", "message": "Multi-user backend running cleanly."}
+
+@app.get("/login")
+def login(user_id: str):
+    """
+    Kicks off the login sequence by manually constructing the Google Auth URL.
+    This guarantees no hidden PKCE challenges are injected, solving the verifier error.
+    """
+    params = {
+        "client_id": os.environ.get("GOOGLE_CLIENT_ID"),
+        "redirect_uri": REDIRECT_URI,
+        "response_type": "code",
+        "scope": " ".join(SCOPES),
+        "access_type": "offline",
+        "prompt": "consent",
+        "state": user_id
+    }
+    
+    # Build the exact URL Google expects
+    auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
+    return RedirectResponse(auth_url)
+
+@app.get("/callback")
+def callback(request: Request, code: str, state: str):
+    """Catches the authenticated callback and executes the direct token trade."""
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database connection unconfigured.")
+        
+    try:
+        token_url = "https://oauth2.googleapis.com/token"
+        payload = {
+            "code": code,
+            "client_id": os.environ.get("GOOGLE_CLIENT_ID"),
+            "client_secret": os.environ.get("GOOGLE_CLIENT_SECRET"),
+            "redirect_uri": REDIRECT_URI,
+            "grant_type": "authorization_code"
+        }
+        
+        response = requests.post(token_url, data=payload)
+        token_data = response.json()
+        
+        if "error" in token_data:
+            raise Exception(f"Google Server Error: {token_data.get('error_description', token_data['error'])}")
+            
+        token_data["scopes"] = SCOPES
+        
+        supabase.table("users_config").upsert({
+            "user_id": state,
+            "encrypted_gmail_token": token_data,
+            "target_keywords": "ChangeMe"
+        }).execute()
+        
+        return {"status": "success", "message": f"Google Account linked for User ID: {state}!"}
+        
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Exchange failed: {str(e)}")
+
+
+# 4. MULTI-USER SWEEP AUTOMATION ROUTE
+
+@app.post("/api/agent/trigger-sweep")
+def trigger_global_sweep(background_tasks: BackgroundTasks):
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database offline.")
+    
+    background_tasks.add_task(execute_all_user_sweeps)
+    return {"status": "accepted", "message": "Global agent sweep initiated in the background."}
+
+def execute_all_user_sweeps():
+    print("🚀 Starting Global Cloud Sweep across all active user accounts...")
+    try:
+        response = supabase.table("users_config").select("*").execute()
+        active_users = response.data
+        print(f"📋 Found {len(active_users)} profiles to process.")
+        
+        for user in active_users:
+            user_id = user["user_id"]
+            token_json = user.get("encrypted_gmail_token")
+            
+            if not token_json:
+                continue
+                
+            print(f"👤 Processing active agent cycle for User ID: {user_id}")
+            
+            user_creds = Credentials(
+                token=token_json.get("token"),
+                refresh_token=token_json.get("refresh_token"),
+                token_uri=token_json.get("token_uri"),
+                client_id=token_json.get("client_id"),
+                client_secret=token_json.get("client_secret"),
+                scopes=token_json.get("scopes")
+            )
+            
+            sender_filter = user.get("target_sender", "*@seattleschools.org")
+            keyword_filter = user.get("target_keywords", "ChangeMe")
+            
+            print(f"🔍 Custom Filters -> Sender: {sender_filter} | Keywords: {keyword_filter}")
+            print(f"✅ Completed processing logic run for user {user_id}")
+            
+    except Exception as e:
+        print(f"❌ Error during global cloud sweep loop: {e}")

@@ -6,3 +6,7 @@ langchain-google-vertexai
 python-dotenv
 flask
 gunicorn
+fastapi
+uvicorn
+requests
+subabase
