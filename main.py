@@ -43,12 +43,12 @@ def read_root():
     return {"status": "online", "message": "Multi-user backend running cleanly."}
 
 @app.get("/login")
-def login(user_id: str):
+def login(user_id: str, request: Request):
     """
     Kicks off the login sequence by manually constructing the Google Auth URL.
-    This guarantees no hidden PKCE challenges are injected, solving the verifier error.
+    Dynamically infers the correct redirect_uri based on the incoming request host.
     """
-    1. Look for Render environment variable first
+    # 1. Look for Render environment variable first
     redirect_target = os.environ.get("REDIRECT_URI")
     
     # 2. Dynamic fallback: If running on Render, construct it from the live host automatically
