@@ -173,67 +173,75 @@ def execute_all_user_sweeps():
         print(f"❌ Error during global cloud sweep loop: {e}")
 
 def run_agent_cycle(creds, sender_filter, keyword_filter):
-    """Connects to Gmail, applies filters, and uses Gemini to extract calendar events."""
-    print("\n🤖 --- Booting up Gmail Agent Brain ---")
+    """Fetches emails, extracts data via Gemini, and writes to Google Calendar."""
+    print("\n🤖 --- Booting up Full Agent Cycle ---")
     
-    # 1. Initialize the Gemini Client
     gemini_api_key = os.environ.get("GEMINI_API_KEY")
     if not gemini_api_key:
-        print("❌ Error: GEMINI_API_KEY is missing from environment variables.")
+        print("❌ Error: GEMINI_API_KEY is missing.")
         return
         
+    from google import genai
+    import json
     ai_client = genai.Client(api_key=gemini_api_key)
 
     try:
-        service = build('gmail', 'v1', credentials=creds)
+        # 1. READ GMAIL
+        gmail_service = build('gmail', 'v1', credentials=creds)
         query = f"from:{sender_filter} ({keyword_filter}) newer_than:2d"
-        print(f"🔍 Executing Live Inbox Search: [{query}]")
-        
-        results = service.users().messages().list(userId='me', q=query).execute()
+        results = gmail_service.users().messages().list(userId='me', q=query).execute()
         messages = results.get('messages', [])
 
         if not messages:
             print("📭 No new matching school emails found in the last 48 hours.")
             return
 
-        print(f"📬 Success! Found {len(messages)} matching emails to analyze.")
+        print(f"📬 Found {len(messages)} matching emails. Processing...")
+        
+        # 2. INITIALIZE CALENDAR
+        calendar_service = build('calendar', 'v3', credentials=creds)
         
         for msg in messages:
-            msg_detail = service.users().messages().get(userId='me', id=msg['id'], format='snippet').execute()
+            msg_detail = gmail_service.users().messages().get(userId='me', id=msg['id'], format='snippet').execute()
             snippet = msg_detail.get('snippet', '')
-            print(f"\n📄 Analyzing Snippet: {snippet}")
             
-            # 2. Instruct Gemini on exactly how to read and extract the data
             prompt = f"""
-            You are a highly accurate calendar assistant. Read the following email snippet from a school.
-            Extract any upcoming events, dates, and times related to the students.
-            
-            Return ONLY a valid JSON array of objects with the following keys. Do not include markdown formatting or backticks.
+            Extract any upcoming events, dates, and times related to the students from this school email.
+            Return ONLY a valid JSON array of objects. Do not include markdown formatting.
+            Keys:
             - "event_name" (string)
-            - "date" (string, format YYYY-MM-DD if possible, guess the year based on context)
-            - "time" (string, or "TBD" if not mentioned)
-            - "child_name" (string, e.g. Eleanor, Hazel, or "Both")
-            
-            If no events are found, return an empty array: []
+            - "date" (string, format YYYY-MM-DD. Note: Current year is 2026)
+            - "child_name" (string, e.g. Eleanor, Hazel)
             
             Email snippet: {snippet}
             """
             
-            # 3. Call the Gemini API
+            # 3. ASK GEMINI
+            response = ai_client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
+            clean_text = response.text.replace("```json", "").replace("```", "").strip()
+            
             try:
-                response = ai_client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=prompt
-                )
-                print(f"🧠 Gemini Extracted JSON: {response.text}")
-            except Exception as ai_error:
-                print(f"❌ Gemini Processing Error: {ai_error}")
+                events = json.loads(clean_text)
+                
+                # 4. WRITE TO CALENDAR
+                for event in events:
+                    event_body = {
+                        'summary': f"[{event.get('child_name', 'School')}] {event.get('event_name', 'Event')}",
+                        'start': {'date': event.get('date')},
+                        'end': {'date': event.get('date')} # Using all-day events for simplicity and robustness
+                    }
+                    
+                    created_event = calendar_service.events().insert(calendarId='primary', body=event_body).execute()
+                    print(f"✅ CALENDAR BOOKED: {created_event.get('summary')} on {event.get('date')}")
+                    print(f"🔗 Link: {created_event.get('htmlLink')}")
+                    
+            except json.JSONDecodeError:
+                print(f"⚠️ Could not parse Gemini output into JSON: {clean_text}")
 
-        print("\n✅ Cycle Complete. Ready for Calendar Booking.")
+        print("\n🏁 Agent Cycle Complete.")
 
     except Exception as e:
-        print(f"❌ Error during Gmail scanning cycle: {e}")
-
+        print(f"❌ Error during agent cycle: {e}")
 
 @app.get("/api/agent/test-gemini-parse")
 def test_gemini_parse():
