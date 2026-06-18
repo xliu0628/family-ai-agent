@@ -8,12 +8,16 @@ load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.responses import RedirectResponse
+from fastapi import FastAPI, BackgroundTasks, Request, HTTPException
+from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.templating import Jinja2Templates
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google import genai
 from supabase import create_client, Client
 
 app = FastAPI(title="Family AI Assistant Multi-User API")
+templates = Jinja2Templates(directory="templates")
 
 # --- 🔍 DEBUG ENVIRONMENT KEYS ---
 print("--- 🔍 DEBUG ENVIRONMENT KEYS ---")
@@ -40,9 +44,10 @@ REDIRECT_URI = "http://127.0.0.1:8000/callback"
 
 # 3. THE WEB ROUTING ENDPOINTS
 
-@app.get("/")
-def read_root():
-    return {"status": "online", "message": "Multi-user backend running cleanly."}
+@app.get("/", response_class=HTMLResponse)
+def serve_dashboard(request: Request):
+    """Serves the main frontend UI."""
+    return templates.TemplateResponse("index.html", {"request": request})
 
 @app.get("/login")
 def login(user_id: str, request: Request):
