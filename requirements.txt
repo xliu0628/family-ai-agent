@@ -9,4 +9,4 @@ gunicorn
 fastapi
 uvicorn
 requests
-subabase
+supabase
