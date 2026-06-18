@@ -48,9 +48,22 @@ def login(user_id: str):
     Kicks off the login sequence by manually constructing the Google Auth URL.
     This guarantees no hidden PKCE challenges are injected, solving the verifier error.
     """
+    1. Look for Render environment variable first
+    redirect_target = os.environ.get("REDIRECT_URI")
+    
+    # 2. Dynamic fallback: If running on Render, construct it from the live host automatically
+    if not redirect_target:
+        host = request.headers.get("host", "127.0.0.1:8000")
+        if "onrender.com" in host:
+            redirect_target = f"https://{host}/callback"
+        else:
+            redirect_target = f"http://{host}/callback"
+            
+    print(f"📡 DEBUG: Initiating OAuth link using redirect target: {redirect_target}")
+
     params = {
         "client_id": os.environ.get("GOOGLE_CLIENT_ID"),
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": redirect_target,
         "response_type": "code",
         "scope": " ".join(SCOPES),
         "access_type": "offline",
@@ -58,7 +71,6 @@ def login(user_id: str):
         "state": user_id
     }
     
-    # Build the exact URL Google expects
     auth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
     return RedirectResponse(auth_url)
 
