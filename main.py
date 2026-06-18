@@ -122,13 +122,17 @@ def callback(request: Request, code: str, state: str):
         raise HTTPException(status_code=400, detail=f"Exchange failed: {str(e)}")
 
 # 4. MULTI-USER SWEEP AUTOMATION ROUTE
-
 @app.post("/api/agent/trigger-sweep")
 def trigger_global_sweep(background_tasks: BackgroundTasks):
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Database offline.")
+    print("🎯 WEBHOOK RECEIVED: /api/agent/trigger-sweep hit via POST!")
     
+    if not supabase:
+        print("❌ CRITICAL: Webhook aborted because Supabase client is None!")
+        raise HTTPException(status_code=500, detail="Database offline.")
+
+    print("⏳ Enqueuing execute_all_user_sweeps to BackgroundTasks...")
     background_tasks.add_task(execute_all_user_sweeps)
+    
     return {"status": "accepted", "message": "Global agent sweep initiated in the background."}
 
 def execute_all_user_sweeps():
