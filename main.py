@@ -84,28 +84,25 @@ REDIRECT_URI = "http://127.0.0.1:8000/callback"
 # 3. THE WEB ROUTING ENDPOINTS
 @app.get("/")
 def serve_dashboard(request: Request):
-    """Fetches user configuration and live tasks from Supabase to render the main UI."""
     test_user_id = "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
     current_sender = "*@seattleschools.org"
     current_keywords = "Eleanor"
-    is_connected = False
+    connected_accounts = []
     tasks = []
 
     try:
         if supabase:
-            # Fetch user configurations
             config_res = supabase.table("users_config").select("*").eq("user_id", test_user_id).execute()
             if config_res.data:
                 user_data = config_res.data[0]
                 current_sender = user_data.get("target_sender", current_sender)
                 current_keywords = user_data.get("target_keywords", current_keywords)
-                if user_data.get("encrypted_gmail_token"):
-                    is_connected = True
             
-            # Fetch active family tasks sorted by due date
+            # Get list of all linked email addresses
+
+            
             tasks_res = supabase.table("user_tasks").select("*").eq("user_id", test_user_id).order("due_date").execute()
             tasks = tasks_res.data if tasks_res.data else []
-            
     except Exception as e:
         print(f"⚠️ Error fetching UI configurations: {e}")
 
@@ -117,11 +114,10 @@ def serve_dashboard(request: Request):
             "user_id": test_user_id,
             "sender": current_sender,
             "keywords": current_keywords,
-            "is_connected": is_connected,
+            "connected_accounts": connected_accounts, # Pipe into the HTML layout
             "tasks": tasks
         }
     )
-
 
 @app.get("/login")
 def login(user_id: str, request: Request):
@@ -188,15 +184,44 @@ def callback(request: Request, code: str, state: str):
         if "error" in token_data:
             raise Exception(f"Google Server Error: {token_data.get('error_description', token_data['error'])}")
 
+        # 🛠️ NEW MULTI-ACCOUNT CODE TO PASTE IN:
         token_data["scopes"] = SCOPES
 
-        supabase.table("users_config").upsert({
-            "user_id": state,
-            "encrypted_gmail_token": token_data,
-            "target_keywords": "ChangeMe"
-        }).execute()
+        # Create a temporary credentials wrapper to ask Google for the email address
+        creds = Credentials(
+            token=token_data.get("access_token"),
+            refresh_token=token_data.get("refresh_token"),
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=os.environ.get("GOOGLE_CLIENT_ID"),
+            client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
+            scopes=token_data.get("scopes")
+        )
+        
+        # Call the Gmail API profile endpoint to get the user's specific email address
+        gmail_service = build('gmail', 'v1', credentials=creds)
+        profile = gmail_service.users().getProfile(userId='me').execute()
+        user_email = profile.get('emailAddress')
 
-        return {"status": "success", "message": f"Google Account linked for User ID: {state}!"}
+        # Check if this email is already linked to this user in our new table
+        existing = supabase.table("connected_emails").select("id").eq("user_id", state).eq("email_address", user_email).execute()
+        
+        if existing.data:
+            # Update the token for this email if it already exists
+            supabase.table("connected_emails").update({
+                "encrypted_gmail_token": token_data
+            }).eq("id", existing.data[0]["id"]).execute()
+            print(f"🔄 Updated token for connected account: {user_email}")
+        else:
+            # Add a brand new connection record if it's a new email address
+            supabase.table("connected_emails").insert({
+                "user_id": state,
+                "email_address": user_email,
+                "encrypted_gmail_token": token_data
+            }).execute()
+            print(f"➕ Added brand new inbox connection: {user_email}")
+
+        # Redirect them back to the main dashboard page instead of returning raw JSON text
+        return RedirectResponse(url="/")
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Exchange failed: {str(e)}")
@@ -215,44 +240,58 @@ def trigger_global_sweep(background_tasks: BackgroundTasks):
     
     return {"status": "accepted", "message": "Global agent sweep initiated in the background."}
 
+
 def execute_all_user_sweeps():
-    print("🚀 Starting Global Cloud Sweep across all active user accounts...")
-    try:
-        response = supabase.table("users_config").select("*").execute()
-        active_users = response.data
-        print(f"📋 Found {len(active_users)} profiles to process.")
+    """Loops through all active configurations and executes scanning sequences."""
+    print("\n🚀 Starting Global Cloud Sweep across all active user accounts...")
+    if not supabase:
+        return
         
-        for user in active_users:
-            user_id = user["user_id"]
-            token_json = user.get("encrypted_gmail_token")
+    profiles = supabase.table("users_config").select("*").execute()
+    print(f"📋 Found {len(profiles.data)} profiles to process.")
+    
+    for profile in profiles.data:
+        user_id = profile.get("user_id")
+        sender_raw = profile.get("target_sender", "")
+        keywords = profile.get("target_keywords", "*")
+        
+        # 1. Support multiple sender targets by splitting by commas
+        # Example: "*@seattleschools.org, coach.dan@gmail.com" -> ['*@seattleschools.org', 'coach.dan@gmail.com']
+        senders = [s.strip() for s in sender_raw.split(",") if s.strip()]
+        if not senders:
+            senders = ["*"] # Fallback to wildcard if empty
+
+        # 2. Fetch ALL connected email tokens for this specific user profile
+        email_records = supabase.table("connected_emails").select("*").eq("user_id", user_id).execute()
+        
+        if not email_records.data:
+            print(f"📭 User {user_id} has no connected email addresses yet.")
+            continue
             
-            if not token_json:
-                continue
-                
-            print(f"👤 Processing active agent cycle for User ID: {user_id}")
+        # 3. Loop through every single linked inbox account
+        for email_account in email_records.data:
+            email_address = email_account.get("email_address")
+            encrypted_token = email_account.get("encrypted_gmail_token")
             
-            # 🛠️ FIX: Pull client ID and Secret from os.environ, NOT from the token_json
-            user_creds = Credentials(
+            print(f"\n👤 Scanning inbox [{email_address}] for User ID: {user_id}")
+            
+            # Reconstruct the credentials object
+            token_json = json.loads(decrypt_token(encrypted_token))
+            creds = Credentials(
                 token=token_json.get("access_token"),
                 refresh_token=token_json.get("refresh_token"),
                 token_uri="https://oauth2.googleapis.com/token",
-                client_id=os.environ.get("GOOGLE_CLIENT_ID"),         # <-- Fixed
-                client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"), # <-- Fixed
+                client_id=os.environ.get("GOOGLE_CLIENT_ID"),
+                client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
                 scopes=token_json.get("scopes")
             )
- 
-            sender_filter = user.get("target_sender", "*@seattleschools.org")
-            keyword_filter = user.get("target_keywords", "ChangeMe")
-           
-            run_agent_cycle(creds=user_creds, sender_filter=sender_filter, keyword_filter=keyword_filter) 
-            print(f"🔍 Custom Filters -> Sender: {sender_filter} | Keywords: {keyword_filter}")
-            print(f"✅ Completed processing logic run for user {user_id}")
             
-    except Exception as e:
-        print(f"❌ Error during global cloud sweep loop: {e}")
+            # 4. Run the scanning cycle for every distinct sender combination
+            for sender in senders:
+                print(f"🔍 Applying target filter -> Sender: {sender} | Keywords: {keywords}")
+                run_agent_cycle(creds, user_id, sender, keywords)
 
-
-def run_agent_cycle(creds, sender_filter, keyword_filter):
+def run_agent_cycle(creds, user_id, sender_filter, keyword_filter):
     """Fetches emails, extracts tasks via Gemini, and saves them natively to Supabase."""
     print("\n🤖 --- Booting up Full Task Extraction Cycle ---")
     
