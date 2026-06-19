@@ -284,10 +284,9 @@ def execute_all_user_sweeps():
             email_address = email_account.get("email_address")
             encrypted_token = email_account.get("encrypted_gmail_token")
             
-            print(f"Checking profile: {user.get('email')}")
             # 🛑 ADD THIS GUARD CLAUSE
             if not encrypted_token:
-               print(f"⚠️ Skipping user {user.get('id')}: No token found.")
+               print(f"⚠️ Skipping user {user_id.get('id')}: No token found.")
             continue
 
             print(f"\n👤 Scanning inbox [{email_address}] for User ID: {user_id}")
