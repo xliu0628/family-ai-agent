@@ -29,13 +29,20 @@
                                 ⚠️ No email addresses linked yet.
                             </p>
                         {% else %}
-                            {% for email in connected_accounts %}
-                                <div class="text-sm font-medium text-slate-700 flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                    <span class="h-2 w-2 rounded-full bg-emerald-500 shrink-0"></span>
-                                    <span class="truncate" title="{{ email }}">{{ email }}</span>
-                                </div>
-                            {% endfor %}
-                        {% endif %}
+{% for email in connected_accounts %}
+    <div class="text-sm font-medium text-slate-700 flex items-center justify-between bg-slate-50 p-2 rounded-lg border border-slate-100">
+        <div class="flex items-center gap-2 min-w-0">
+            <span class="h-2 w-2 rounded-full bg-emerald-500 shrink-0"></span>
+            <span class="truncate" title="{{ email }}">{{ email }}</span>
+        </div>
+        <button onclick="deleteEmail('{{ email }}')" class="text-slate-400 hover:text-rose-600 transition-colors p-1" title="Disconnect account">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+        </button>
+    </div>
+{% endfor %}                        
+{% endif %}
                     </div>
 
                     <button onclick="window.location.href='/login?user_id={{ user_id }}'" 
@@ -148,6 +155,33 @@
             if (res.ok) {
                 // Instantly refresh the visual lists to reflect state sorting
                 window.location.reload();
+            }
+        }
+// ... your existing javascript functions (like toggleTask, triggerSweep, etc.) are up here ...
+
+        // 🛠️ PASTE THE NEW FUNCTION RIGHT HERE:
+        async function deleteEmail(emailAddress) {
+            if (!confirm(`Are you sure you want to disconnect and delete the token for ${emailAddress}?`)) {
+                return;
+            }
+            
+            try {
+                const res = await fetch('/api/agent/delete-email', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        user_id: "{{ user_id }}", 
+                        email_address: emailAddress 
+                    })
+                });
+                
+                if (res.ok) {
+                    window.location.reload();
+                } else {
+                    alert("Failed to delete account link.");
+                }
+            } catch (err) {
+                console.error("Delete call error:", err);
             }
         }
     </script>

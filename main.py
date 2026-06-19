@@ -89,7 +89,27 @@ SCOPES = [
 
 REDIRECT_URI = "http://127.0.0.1:8000/callback"
 
+class DeleteEmailPayload(BaseModel):
+    user_id: str
+    email_address: str
 
+@app.post("/api/agent/delete-email")
+def delete_connected_email(payload: DeleteEmailPayload):
+    """Deletes a linked Gmail inbox record from Supabase."""
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database disconnected.")
+        
+    try:
+        # Wipe out the specific email token row matching the current session profile
+        supabase.table("connected_emails")\
+            .delete()\
+            .eq("user_id", payload.user_id)\
+            .eq("email_address", payload.email_address)\
+            .execute()
+            
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 # 3. THE WEB ROUTING ENDPOINTS
 import uuid
