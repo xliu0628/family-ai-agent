@@ -90,30 +90,42 @@ SCOPES = [
 REDIRECT_URI = "http://127.0.0.1:8000/callback"
 
 
+
 # 3. THE WEB ROUTING ENDPOINTS
+import uuid
+
 @app.get("/")
-def serve_dashboard(request: Request):
-    test_user_id = "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
-    current_sender = "*@seattleschools.org"
-    current_keywords = "Eleanor"
+def serve_dashboard(request: Request, user_id: str = None):
+    # 🛠️ DYNAMIC LOOKUP: If no user_id is in the URL, create a brand-new unique blank slate!
+    if not user_id:
+        # Generate a random unique string ID
+        user_id = str(uuid.uuid4())
+        # Automatically redirect them to their own isolated dashboard URL
+        return RedirectResponse(url=f"/?user_id={user_id}")
+
+    # Initialize empty layout placeholders
+    current_sender = ""
+    current_keywords = ""
     connected_accounts = []
     tasks = []
 
     try:
         if supabase:
-            config_res = supabase.table("users_config").select("*").eq("user_id", test_user_id).execute()
+            # 1. Fetch configurations specific to THIS dynamic user_id
+            config_res = supabase.table("users_config").select("*").eq("user_id", user_id).execute()
             if config_res.data:
                 user_data = config_res.data[0]
                 current_sender = user_data.get("target_sender", current_sender)
                 current_keywords = user_data.get("target_keywords", current_keywords)
-
-            # 🛠️ PATCH: Paste these two lines right here!
-            emails_res = supabase.table("connected_emails").select("email_address").eq("user_id", test_user_id).execute()
+            
+            # 2. Fetch inbox links belonging exclusively to THIS dynamic user_id
+            emails_res = supabase.table("connected_emails").select("email_address").eq("user_id", user_id).execute()
             connected_accounts = [row["email_address"] for row in emails_res.data] if emails_res.data else []
-
-            tasks_res = supabase.table("user_tasks").select("*").eq("user_id", test_user_id).order("due_date").execute()
+            
+            # 3. Fetch task tracking lines matching THIS dynamic user_id
+            tasks_res = supabase.table("user_tasks").select("*").eq("user_id", user_id).order("due_date").execute()
             tasks = tasks_res.data if tasks_res.data else []
-
+            
     except Exception as e:
         print(f"⚠️ Error fetching UI configurations: {e}")
 
@@ -122,10 +134,10 @@ def serve_dashboard(request: Request):
         name="index.html", 
         context={
             "request": request,
-            "user_id": test_user_id,
+            "user_id": user_id,       # <-- Passes the dynamic unique ID to the HTML template
             "sender": current_sender,
             "keywords": current_keywords,
-            "connected_accounts": connected_accounts, # Pipe into the HTML layout
+            "connected_accounts": connected_accounts,
             "tasks": tasks
         }
     )
