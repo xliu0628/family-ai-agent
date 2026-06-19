@@ -121,7 +121,7 @@ def serve_dashboard(request: Request, user_id: str = None):
         # Generate a random unique string ID
         user_id = str(uuid.uuid4())
         # Automatically redirect them to their own isolated dashboard URL
-        return RedirectResponse(url=f"/?user_id={user_id}")
+        return RedirectResponse(url=f"/?user_id={user_id}", status_code=303)
 
     # Initialize empty layout placeholders
     current_sender = ""
