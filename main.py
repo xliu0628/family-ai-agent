@@ -16,6 +16,19 @@ from googleapiclient.discovery import build
 from google import genai
 from supabase import create_client, Client
 
+app = FastAPI(title="Family AI Assistant Multi-User API")
+templates = Jinja2Templates(directory="templates")
+
+# --- 🔍 DEBUG ENVIRONMENT KEYS ---
+print("--- 🔍 DEBUG ENVIRONMENT KEYS ---")
+client_id = os.environ.get("GOOGLE_CLIENT_ID")
+client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
+
+print(f"Loaded Client ID: {client_id}")
+print(f"Loaded Client Secret: {client_secret[:10] if client_secret else 'None'}...")
+print("---------------------------------")
+
+
 from pydantic import BaseModel
 
 class ConfigPayload(BaseModel):
@@ -38,19 +51,6 @@ def save_config(payload: ConfigPayload):
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-
-app = FastAPI(title="Family AI Assistant Multi-User API")
-templates = Jinja2Templates(directory="templates")
-
-# --- 🔍 DEBUG ENVIRONMENT KEYS ---
-print("--- 🔍 DEBUG ENVIRONMENT KEYS ---")
-client_id = os.environ.get("GOOGLE_CLIENT_ID")
-client_secret = os.environ.get("GOOGLE_CLIENT_SECRET")
-
-print(f"Loaded Client ID: {client_id}")
-print(f"Loaded Client Secret: {client_secret[:10] if client_secret else 'None'}...")
-print("---------------------------------")
 
 
 # 2. CLOUD DATABASE & INTEGRATIONS CONFIG
