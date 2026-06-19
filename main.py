@@ -29,6 +29,14 @@ print(f"Loaded Client ID: {client_id}")
 print(f"Loaded Client Secret: {client_secret[:10] if client_secret else 'None'}...")
 print("---------------------------------")
 
+from cryptography.fernet import Fernet
+import os
+
+def decrypt_token(encrypted_token: str) -> str:
+    # Example using Fernet (ensure ENCRYPTION_KEY is in your Render Env vars)
+    key = os.environ.get("ENCRYPTION_KEY")
+    f = Fernet(key)
+    return f.decrypt(encrypted_token.encode()).decode()
 
 from pydantic import BaseModel
 
