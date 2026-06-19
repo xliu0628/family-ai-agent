@@ -16,6 +16,30 @@ from googleapiclient.discovery import build
 from google import genai
 from supabase import create_client, Client
 
+from pydantic import BaseModel
+
+class ConfigPayload(BaseModel):
+    user_id: str
+    sender: str
+    keywords: str
+
+@app.post("/api/agent/save-config")
+def save_config(payload: ConfigPayload):
+    """Updates the user configuration directly inside Supabase from the UI."""
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database offline.")
+        
+    try:
+        supabase.table("users_config").update({
+            "target_sender": payload.sender,
+            "target_keywords": payload.keywords
+        }).eq("user_id", payload.user_id).execute()
+        
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 app = FastAPI(title="Family AI Assistant Multi-User API")
 templates = Jinja2Templates(directory="templates")
 
@@ -45,12 +69,37 @@ REDIRECT_URI = "http://127.0.0.1:8000/callback"
 # 3. THE WEB ROUTING ENDPOINTS
 @app.get("/")
 def serve_dashboard(request: Request):
-    """Serves the main frontend UI."""
-    # 🛠️ FIX: Use explicit keyword arguments to comply with recent FastAPI/Starlette signatures
+    """Fetches user configuration from Supabase and renders the UI."""
+    # Use your testing account ID
+    test_user_id = "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
+    
+    current_sender = "*@seattleschools.org"
+    current_keywords = "Eleanor"
+    is_connected = False
+
+    try:
+        if supabase:
+            response = supabase.table("users_config").select("*").eq("user_id", test_user_id).execute()
+            if response.data:
+                user_data = response.data[0]
+                current_sender = user_data.get("target_sender", current_sender)
+                current_keywords = user_data.get("target_keywords", current_keywords)
+                # If they have tokens saved, consider them connected
+                if user_data.get("encrypted_gmail_token"):
+                    is_connected = True
+    except Exception as e:
+        print(f"⚠️ Error fetching UI configurations: {e}")
+
     return templates.TemplateResponse(
         request=request, 
         name="index.html", 
-        context={"request": request}
+        context={
+            "request": request,
+            "user_id": test_user_id,
+            "sender": current_sender,
+            "keywords": current_keywords,
+            "is_connected": is_connected
+        }
     )
 
 @app.get("/login")

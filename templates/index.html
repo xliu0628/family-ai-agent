@@ -14,28 +14,56 @@
             <p class="text-slate-500">Autonomous inbox scanning and event extraction.</p>
         </header>
 
-        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 space-y-8">
             
-            <div class="flex items-center justify-between border-b border-slate-100 pb-6 mb-6">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-6">
                 <div>
                     <h2 class="text-xl font-bold">Google Connection</h2>
                     <p class="text-sm text-slate-500">Link your Gmail & Calendar</p>
                 </div>
-                <button onclick="window.location.href='/login?user_id=a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d'" 
-                        class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors">
-                    Connect Account
-                </button>
+                <div>
+                    {% if is_connected %}
+                        <span class="inline-flex items-center gap-x-1.5 rounded-md bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-800">
+                            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                            Active & Connected
+                        </span>
+                    {% else %}
+                        <button onclick="window.location.href='/login?user_id={{ user_id }}'" 
+                                class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors shadow-sm">
+                            Connect Account
+                        </button>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="border-b border-slate-100 pb-8">
+                <h2 class="text-xl font-bold mb-4">Agent Rules</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-600 mb-1">Target Sender Domain</label>
+                        <input type="text" id="sender-input" value="{{ sender }}" class="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm focus:border-indigo-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-600 mb-1">Keywords (Comma separated)</label>
+                        <input type="text" id="keywords-input" value="{{ keywords }}" class="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm focus:border-indigo-500 focus:outline-none">
+                    </div>
+                </div>
+                <div class="mt-4 text-right">
+                    <button onclick="saveConfig()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold py-2 px-4 rounded-lg text-sm transition-colors">
+                        Save Rules
+                    </button>
+                    <span id="save-status" class="text-xs text-emerald-600 ml-2 hidden">✨ Saved to Supabase!</span>
+                </div>
             </div>
 
             <div class="bg-slate-50 rounded-xl p-6 border border-slate-200 text-center">
                 <h3 class="font-semibold mb-2">Manual Agent Override</h3>
                 <p class="text-sm text-slate-500 mb-4">Force the AI to scan your inbox right now instead of waiting for the background schedule.</p>
                 
-                <button onclick="triggerSweep()" 
-                        class="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors shadow-sm">
+                <button onclick="triggerSweep()" class="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors shadow-sm">
                     🚀 Run Inbox Sweep
                 </button>
-                <p id="sweep-status" class="text-sm font-medium mt-3 text-indigo-600 hidden">Sweep initiated! Check logs.</p>
+                <p id="sweep-status" class="text-sm font-medium mt-3 text-indigo-600 hidden">Sweep initiated! Checking logs...</p>
             </div>
 
         </div>
@@ -44,10 +72,25 @@
     <script>
         async function triggerSweep() {
             document.getElementById('sweep-status').classList.remove('hidden');
-            try {
-                await fetch('/api/agent/trigger-sweep', { method: 'POST' });
-            } catch (error) {
-                console.error("Error triggering sweep:", error);
+            setTimeout(() => document.getElementById('sweep-status').classList.add('hidden'), 5000);
+            await fetch('/api/agent/trigger-sweep', { method: 'POST' });
+        }
+
+        async function saveConfig() {
+            const sender = document.getElementById('sender-input').value;
+            const keywords = document.getElementById('keywords-input').value;
+            
+            // We will build this simple endpoint next!
+            const res = await fetch('/api/agent/save-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: "{{ user_id }}", sender, keywords })
+            });
+            
+            if (res.ok) {
+                const badge = document.getElementById('save-status');
+                badge.classList.remove('hidden');
+                setTimeout(() => badge.classList.add('hidden'), 3000);
             }
         }
     </script>
