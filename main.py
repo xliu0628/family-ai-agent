@@ -116,14 +116,27 @@ import uuid
 
 @app.get("/")
 def serve_dashboard(request: Request, user_id: str = None):
-    # 🛠️ DYNAMIC LOOKUP: If no user_id is in the URL, create a brand-new unique blank slate!
-    if not user_id:
-        # Generate a random unique string ID
-        user_id = str(uuid.uuid4())
-        # Automatically redirect them to their own isolated dashboard URL
-        return RedirectResponse(url=f"/?user_id={user_id}", status_code=303)
+    # Case A: User typed a completely bare URL (No user_id in the address bar)
+    if not user_id or user_id.strip() == "":
+        # 🍪 Check if this browser has a saved session cookie from before
+        saved_user_id = request.cookies.get("family_agent_user_id")
+        
+        if saved_user_id:
+            print(f"🍪 Found return user session cookie! Redirecting to dashboard: {saved_user_id}")
+            return RedirectResponse(url=f"/?user_id={saved_user_id}", status_code=303)
+        
+        # Truly brand new user with no cookie history -> Give them a clean slate ID
+        import uuid
+        new_user_id = str(uuid.uuid4())
+        print(f"✨ Brand new visitor. Assigning unique ID: {new_user_id}")
+        
+        response = RedirectResponse(url=f"/?user_id={new_user_id}", status_code=303)
+        # Drop the cookie onto their device so they are remembered next time
+        response.set_cookie(key="family_agent_user_id", value=new_user_id, max_age=31536000) # Valid for 1 year
+        return response
 
-    # Initialize empty layout placeholders
+    # Case B: The user has a user_id explicitly in the URL bar (e.g., your private bookmark)
+    # We load the page normally, but we also ensure their cookie is updated to match this ID!
     current_sender = ""
     current_keywords = ""
     connected_accounts = []
@@ -131,37 +144,38 @@ def serve_dashboard(request: Request, user_id: str = None):
 
     try:
         if supabase:
-            # 1. Fetch configurations specific to THIS dynamic user_id
             config_res = supabase.table("users_config").select("*").eq("user_id", user_id).execute()
             if config_res.data:
                 user_data = config_res.data[0]
                 current_sender = user_data.get("target_sender", current_sender)
                 current_keywords = user_data.get("target_keywords", current_keywords)
             
-            # 2. Fetch inbox links belonging exclusively to THIS dynamic user_id
             emails_res = supabase.table("connected_emails").select("email_address").eq("user_id", user_id).execute()
             connected_accounts = [row["email_address"] for row in emails_res.data] if emails_res.data else []
             
-            # 3. Fetch task tracking lines matching THIS dynamic user_id
             tasks_res = supabase.table("user_tasks").select("*").eq("user_id", user_id).order("due_date").execute()
             tasks = tasks_res.data if tasks_res.data else []
             
     except Exception as e:
         print(f"⚠️ Error fetching UI configurations: {e}")
 
-    return templates.TemplateResponse(
+    # Generate the standard page response
+    response = templates.TemplateResponse(
         request=request, 
         name="index.html", 
         context={
             "request": request,
-            "user_id": user_id,       # <-- Passes the dynamic unique ID to the HTML template
+            "user_id": user_id,       
             "sender": current_sender,
             "keywords": current_keywords,
             "connected_accounts": connected_accounts,
             "tasks": tasks
         }
     )
-
+    
+    # 💾 Update the cookie to sync with whatever ID is currently active in the address bar
+    response.set_cookie(key="family_agent_user_id", value=user_id, max_age=31536000)
+    return response
 @app.get("/login")
 def login(user_id: str, request: Request):
     """
@@ -268,8 +282,10 @@ def callback(request: Request, code: str, state: str):
             }).execute()
             print(f"➕ Added brand new inbox connection: {user_email}")
 
-        # Redirect them back to the main dashboard page instead of returning raw JSON text
-        return RedirectResponse(url=f"/?user_id={state}")
+        # 🛠️ NEW: Drop the cookie during callback so their device remembers this account connection
+        response = RedirectResponse(url=f"/?user_id={state}")
+        response.set_cookie(key="family_agent_user_id", value=state, max_age=31536000)
+        return response
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Exchange failed: {str(e)}")
