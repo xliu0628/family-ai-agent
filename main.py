@@ -250,6 +250,7 @@ def callback(request: Request, code: str, state: str):
 
         # Redirect them back to the main dashboard page instead of returning raw JSON text
         return RedirectResponse(url="/")
+        return RedirectResponse(url=f"/?user_id={state}")
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Exchange failed: {str(e)}")
