@@ -251,62 +251,67 @@ def trigger_global_sweep(background_tasks: BackgroundTasks):
     
     return {"status": "accepted", "message": "Global agent sweep initiated in the background."}
 
-
 def execute_all_user_sweeps():
-    """Loops through all active configurations and executes scanning sequences."""
+    """Loops through all active configurations safely and logs any inner loop errors."""
     print("\n🚀 Starting Global Cloud Sweep across all active user accounts...")
     if not supabase:
+        print("❌ Supabase connection missing in background thread.")
         return
         
-    profiles = supabase.table("users_config").select("*").execute()
-    print(f"📋 Found {len(profiles.data)} profiles to process.")
-    
-    for profile in profiles.data:
-        user_id = profile.get("user_id")
-        sender_raw = profile.get("target_sender", "")
-        keywords = profile.get("target_keywords", "*")
+    try:
+        profiles = supabase.table("users_config").select("*").execute()
+        print(f"📋 Found {len(profiles.data)} profiles to process.")
         
-        # 1. Support multiple sender targets by splitting by commas
-        # Example: "*@seattleschools.org, coach.dan@gmail.com" -> ['*@seattleschools.org', 'coach.dan@gmail.com']
-        senders = [s.strip() for s in sender_raw.split(",") if s.strip()]
-        if not senders:
-            senders = ["*"] # Fallback to wildcard if empty
+        for profile in profiles.data:
+            # Wrap the individual profile execution in a try block so it won't die silently
+            try:
+                user_id = profile.get("user_id")
+                sender_raw = profile.get("target_sender") or "" # Fallback to empty string if None
+                keywords = profile.get("target_keywords") or "*"
+                
+                print(f"🔍 DEBUG: Fetching inboxes for profile user_id: {user_id}")
+                
+                # Safe comma-splitting
+                senders = [s.strip() for s in str(sender_raw).split(",") if s.strip()]
+                if not senders:
+                    senders = ["*"]
 
-        # 2. Fetch ALL connected email tokens for this specific user profile
-        email_records = supabase.table("connected_emails").select("*").eq("user_id", user_id).execute()
-        
-        if not email_records.data:
-            print(f"📭 User {user_id} has no connected email addresses yet.")
-            continue
-            
-        # 3. Loop through every single linked inbox account
-        for email_account in email_records.data:
-            email_address = email_account.get("email_address")
-            encrypted_token = email_account.get("encrypted_gmail_token")
-            
-            # 🛑 ADD THIS GUARD CLAUSE
-            if not encrypted_token:
-               print(f"⚠️ Skipping user {user_id.get('id')}: No token found.")
-            continue
-
-            print(f"\n👤 Scanning inbox [{email_address}] for User ID: {user_id}")
-           
-             
-            # Reconstruct the credentials object
-            token_json = json.loads(decrypt_token(encrypted_token))
-            creds = Credentials(
-                token=token_json.get("access_token"),
-                refresh_token=token_json.get("refresh_token"),
-                token_uri="https://oauth2.googleapis.com/token",
-                client_id=os.environ.get("GOOGLE_CLIENT_ID"),
-                client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
-                scopes=token_json.get("scopes")
-            )
-            
-            # 4. Run the scanning cycle for every distinct sender combination
-            for sender in senders:
-                print(f"🔍 Applying target filter -> Sender: {sender} | Keywords: {keywords}")
-                run_agent_cycle(creds, user_id, sender, keywords)
+                # Fetch email connections
+                email_records = supabase.table("connected_emails").select("*").eq("user_id", user_id).execute()
+                print(f"📋 DEBUG: Found {len(email_records.data)} linked inbox rows for this user.")
+                
+                if not email_records.data:
+                    print(f"📭 User {user_id} has no connected email records yet.")
+                    continue
+                    
+                for email_account in email_records.data:
+                    email_address = email_account.get("email_address")
+                    token_package = email_account.get("encrypted_gmail_token")
+                    
+                    print(f"👤 Ready to run sweep loop on email inbox: {email_address}")
+                    
+                    # NOTE: Since your previous callback was saving raw JSON data token_data directly,
+                    # we do not need a separate decrypt step if it's stored as plain JSON objects.
+                    # Reconstruct credentials using your existing storage design:
+                    from google.oauth2.credentials import Credentials
+                    creds = Credentials(
+                        token=token_package.get("access_token"),
+                        refresh_token=token_package.get("refresh_token"),
+                        token_uri="https://oauth2.googleapis.com/token",
+                        client_id=os.environ.get("GOOGLE_CLIENT_ID"),
+                        client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
+                        scopes=token_package.get("scopes")
+                    )
+                    
+                    for sender in senders:
+                        print(f"🚀 Triggering run_agent_cycle for {email_address} targeting sender: {sender}")
+                        run_agent_cycle(creds, user_id, sender, keywords)
+                        
+            except Exception as inner_error:
+                print(f"❌ Error while running individual profile loop for user {profile.get('user_id')}: {str(inner_error)}")
+                
+    except Exception as global_error:
+        print(f"❌ Global sweep loop crash: {str(global_error)}")
 
 def run_agent_cycle(creds, user_id, sender_filter, keyword_filter):
     """Fetches emails, extracts tasks via Gemini, and saves them natively to Supabase."""
