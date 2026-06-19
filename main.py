@@ -283,7 +283,7 @@ def run_agent_cycle(creds, sender_filter, keyword_filter):
         user_id = "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
 
         for msg in messages:
-            msg_detail = gmail_service.users().messages().get(userId='me', id=msg['id'], format='snippet').execute()
+            msg_detail = gmail_service.users().messages().get(userId='me', id=msg['id'], format='metadata').execute()
             snippet = msg_detail.get('snippet', '')
             
             # Expanded prompt instructing Gemini to categorize items into actionable tasks
