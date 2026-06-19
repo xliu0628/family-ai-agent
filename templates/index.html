@@ -88,35 +88,48 @@
                     {% else %}
                         <div class="space-y-3">
                             {% for task in tasks %}
-                                <div class="flex items-start gap-3 p-4 rounded-xl border border-slate-100 {% if task.status == 'completed' %}bg-slate-50/70 border-slate-200/50 opacity-60{% else %}bg-white shadow-sm hover:border-slate-300{% endif %} transition-all">
-                                    <input type="checkbox" 
-                                           class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                                           {% if task.status == 'completed' %}checked{% endif %}
-                                           onclick="toggleTask('{{ task.id }}', this)">
-                                    
-                                    <div class="flex-1 min-w-0">
-                                        <div class="flex items-center gap-2 flex-wrap">
-                                            <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                                                {{ task.child_name }}
-                                            </span>
-                                            
-                                            {% if task.task_type == 'Event' %}
-                                                <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">📅 Event</span>
-                                            {% elif task.task_type == 'Deadline' %}
-                                                <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-rose-50 text-rose-700 border border-rose-100">🚨 Deadline</span>
-                                            {% else %}
-                                                <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100">📝 To-Do</span>
-                                            {% endif %}
+                            <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col md:flex-row md:items-center justify-between gap-4 mb-3">
+    <div class="flex-1 space-y-2 min-w-0">
+        <div class="flex flex-wrap items-center gap-2">
+            {% if task.task_type == 'Event' %}
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100 flex items-center gap-1">
+                    📅 Event
+                </span>
+            {% elif task.task_type == 'Deadline' %}
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-100 flex items-center gap-1">
+                    🚨 Deadline
+                </span>
+            {% else %}
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-50 text-slate-700 border border-slate-100 flex items-center gap-1">
+                    📋 To-Do
+                </span>
+            {% endif %}
 
-                                            {% if task.due_date %}
-                                                <span class="text-xs text-slate-400 ml-auto font-medium">Due: {{ task.due_date }}</span>
-                                            {% endif %}
-                                        </div>
-                                        <p class="text-sm font-semibold mt-1.5 text-slate-900 {% if task.status == 'completed' %}line-through text-slate-400{% endif %}">
-                                            {{ task.task_name }}
-                                        </p>
-                                    </div>
-                                </div>
+            <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100 flex items-center gap-1">
+                • {{ task.child_name or 'Family' }}
+            </span>
+        </div>
+
+        <h3 class="text-base font-semibold text-slate-800 truncate" title="{{ task.task_name }}">
+            {{ task.task_name }}
+        </h3>
+
+        {% if task.due_date %}
+        <div class="flex items-center gap-1.5 text-xs text-slate-500">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span>Date: <strong>{{ task.due_date }}</strong></span>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="flex items-center gap-2 shrink-0 self-end md:self-center">
+        <button onclick="toggleTaskStatus('{{ task.id }}')" class="px-4 py-1.5 bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 border border-slate-200 hover:border-emerald-200 rounded-lg text-xs font-medium text-slate-600 transition-colors flex items-center gap-1">
+            ✓ Mark Done
+        </button>
+    </div>
+</div>
                             {% endfor %}
                         </div>
                     {% endif %}
