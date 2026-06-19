@@ -97,12 +97,14 @@ def serve_dashboard(request: Request):
                 user_data = config_res.data[0]
                 current_sender = user_data.get("target_sender", current_sender)
                 current_keywords = user_data.get("target_keywords", current_keywords)
-            
-            # Get list of all linked email addresses
 
-            
+            # 🛠️ PATCH: Paste these two lines right here!
+            emails_res = supabase.table("connected_emails").select("email_address").eq("user_id", test_user_id).execute()
+            connected_accounts = [row["email_address"] for row in emails_res.data] if emails_res.data else []
+
             tasks_res = supabase.table("user_tasks").select("*").eq("user_id", test_user_id).order("due_date").execute()
             tasks = tasks_res.data if tasks_res.data else []
+
     except Exception as e:
         print(f"⚠️ Error fetching UI configurations: {e}")
 
