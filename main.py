@@ -404,38 +404,31 @@ def run_agent_cycle(creds, user_id, sender_filter, keyword_filter):
         - 'task_type': 'Event', 'Deadline', or 'To-Do'
         """
 
-        # 3. Call Gemini once here using your model client wrapper
-        # response_data = call_gemini_model(batch_prompt)
-        
-        # 4. Loop through the returned batch array and insert rows into Supabase
-        # (This uses 0 Gemini tokens!) 
-            response = ai_client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
-            clean_text = response.text.replace("```json", "").replace("```", "").strip()
-            
-            try:
-                extracted_tasks = json.loads(clean_text)
-                
-                # 2. Insert items directly into Supabase
-                for task in extracted_tasks:
-                    if supabase:
-                        supabase.table("user_tasks").insert({
-                            "user_id": user_id,
-                            "child_name": task.get("child_name", "Both"),
-                            "task_name": task.get("task_name"),
-                            "task_type": task.get("task_type", "To-Do"),
-                            "due_date": task.get("date"),
-                            "status": "pending"
-                        }).execute()
-                        print(f"💾 NATIVE TASK SAVED: [{task.get('child_name')}] {task.get('task_name')}")
-                        
-            except json.JSONDecodeError:
-                print(f"⚠️ Could not parse Gemini output into JSON: {clean_text}")
-             
-            print("⏳ Sleeping 12 seconds to respect Gemini Free Tier 5 RPM quota...")
-            time.sleep(12)
+       # 3. Call Gemini once using your batch_prompt layout variable
+        response = ai_client.models.generate_content(model='gemini-2.5-flash', contents=batch_prompt)
+        clean_text = response.text.replace("```json", "").replace("```", "").strip()
 
-        print("\n🏁 Task Agent Cycle Complete.")
+        # 4. Parse the single array and execute the zero-token database writes
+        try:
+            extracted_tasks = json.loads(clean_text)
 
+            for task in extracted_tasks:
+                if supabase:
+                    supabase.table("user_tasks").insert({
+                        "user_id": user_id,
+                        "child_name": task.get("child_name", "Both"),
+                        "task_name": task.get("task_name"),
+                        "task_type": task.get("task_type", "To-Do"),
+                        "due_date": task.get("date"),  # Maps cleanly to the prompt "date" key
+                        "status": "pending"
+                    }).execute()
+                    
+            print(f"✅ Batch extraction complete! Wrote {len(extracted_tasks)} tasks to Supabase.")
+
+        except Exception as parse_err:
+            print(f"❌ Failed parsing batch JSON payload: {parse_err}")
+            print(f"Raw model response text was: {clean_text}")               
+      
     except Exception as e:
         print(f"❌ Error during agent cycle: {e}")
 
