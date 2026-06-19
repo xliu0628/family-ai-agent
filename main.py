@@ -225,6 +225,11 @@ def callback(request: Request, code: str, state: str):
         profile = gmail_service.users().getProfile(userId='me').execute()
         user_email = profile.get('emailAddress')
 
+        supabase.table("users_config").upsert({
+            "user_id": state,
+            "target_keywords": "*"  
+        }).execute()
+
         # Check if this email is already linked to this user in our new table
         existing = supabase.table("connected_emails").select("id").eq("user_id", state).eq("email_address", user_email).execute()
         
