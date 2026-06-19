@@ -288,11 +288,13 @@ def execute_all_user_sweeps():
                     email_address = email_account.get("email_address")
                     token_package = email_account.get("encrypted_gmail_token")
                     
+                    # 🛠️ FIX: If the database returns the token as a string, parse it into a dict!
+                    if isinstance(token_package, str):
+                        import json
+                        token_package = json.loads(token_package)
+                    
                     print(f"👤 Ready to run sweep loop on email inbox: {email_address}")
                     
-                    # NOTE: Since your previous callback was saving raw JSON data token_data directly,
-                    # we do not need a separate decrypt step if it's stored as plain JSON objects.
-                    # Reconstruct credentials using your existing storage design:
                     from google.oauth2.credentials import Credentials
                     creds = Credentials(
                         token=token_package.get("access_token"),
@@ -302,7 +304,7 @@ def execute_all_user_sweeps():
                         client_secret=os.environ.get("GOOGLE_CLIENT_SECRET"),
                         scopes=token_package.get("scopes")
                     )
-                    
+    
                     for sender in senders:
                         print(f"🚀 Triggering run_agent_cycle for {email_address} targeting sender: {sender}")
                         run_agent_cycle(creds, user_id, sender, keywords)
