@@ -424,6 +424,9 @@ def run_agent_cycle(creds, user_id, sender_filter, keyword_filter):
                         
             except json.JSONDecodeError:
                 print(f"⚠️ Could not parse Gemini output into JSON: {clean_text}")
+             
+            print("⏳ Sleeping 12 seconds to respect Gemini Free Tier 5 RPM quota...")
+            time.sleep(12)
 
         print("\n🏁 Task Agent Cycle Complete.")
 
