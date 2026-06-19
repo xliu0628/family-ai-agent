@@ -268,7 +268,7 @@ def run_agent_cycle(creds, sender_filter, keyword_filter):
     try:
         # 1. Read the Gmail inbox
         gmail_service = build('gmail', 'v1', credentials=creds)
-        query = f"from:{sender_filter} ({keyword_filter}) newer_than:2d"
+        query = f"from:{sender_filter} ({keyword_filter}) newer_than:7d"
         results = gmail_service.users().messages().list(userId='me', q=query).execute()
         messages = results.get('messages', [])
 
