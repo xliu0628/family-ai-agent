@@ -419,9 +419,36 @@ def run_agent_cycle(creds, user_id, sender_filter, keyword_filter):
         - 'child_name': name of child if inferred
         - 'task_type': 'Event', 'Deadline', or 'To-Do'
         """
+        # 3. Call Gemini once using your batch_prompt layout variable
+        import time
+        from google.genai.errors import APIError  # For the new google-genai SDK
+        
+        max_retries = 3
+        delay = 2  # start with a 2-second delay
+        response = None
 
-       # 3. Call Gemini once using your batch_prompt layout variable
-        response = ai_client.models.generate_content(model='gemini-2.5-flash', contents=batch_prompt)
+        for attempt in range(max_retries):
+            try:
+                response = ai_client.models.generate_content(model='gemini-2.5-flash', contents=batch_prompt)
+                break  # 🎉 Success! Break out of the retry loop.
+            except APIError as e:
+                # Check if it's a 503 or transient overload error
+                if e.code == 503 and attempt < max_retries - 1:
+                    print(f"⏳ Gemini 503 experiencing high demand. Retrying in {delay}s... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(delay)
+                    delay *= 2  # Double the wait time for the next try
+                else:
+                    print(f"❌ Gemini API failed completely after {max_retries} attempts.")
+                    raise e  # Re-raise the exception to be caught by your outer handlers
+            except Exception as e:
+                # Catch any other unexpected network glitches
+                if attempt < max_retries - 1:
+                    time.sleep(delay)
+                    delay *= 2
+                else:
+                    raise e
+
+        # Code continues normally if response was successful:
         clean_text = response.text.replace("```json", "").replace("```", "").strip()
 
         # 4. Parse the single array and execute the zero-token database writes
@@ -438,13 +465,13 @@ def run_agent_cycle(creds, user_id, sender_filter, keyword_filter):
                         "due_date": task.get("date"),  # Maps cleanly to the prompt "date" key
                         "status": "pending"
                     }).execute()
-                    
+
             print(f"✅ Batch extraction complete! Wrote {len(extracted_tasks)} tasks to Supabase.")
 
         except Exception as parse_err:
             print(f"❌ Failed parsing batch JSON payload: {parse_err}")
-            print(f"Raw model response text was: {clean_text}")               
-      
+            print(f"Raw model response text was: {clean_text}")
+
     except Exception as e:
         print(f"❌ Error during agent cycle: {e}")
 
