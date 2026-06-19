@@ -379,30 +379,36 @@ def run_agent_cycle(creds, user_id, sender_filter, keyword_filter):
         print(f"📬 Found {len(messages)} matching emails to process.")
         
         # Grab the user_id dynamically from the credential wrapper or database mapping context
-        # For testing purposes, we map to your test UUID
-
+           # 1. Collect all snippets into a single combined payload first
+        combined_email_payload = []
+        
         for msg in messages:
             msg_detail = gmail_service.users().messages().get(userId='me', id=msg['id'], format='metadata').execute()
             snippet = msg_detail.get('snippet', '')
-            
-            # Expanded prompt instructing Gemini to categorize items into actionable tasks
-            prompt = f"""
-            Analyze this school email snippet and extract all actions, events, and due dates into a structured list.
-            Categorize each item into one of three types:
-            1. 'Event' (An absolute date/time you must physically show up for)
-            2. 'Deadline' (A hard cut-off date to turn something in, like library books or permission forms)
-            3. 'To-Do' (An action item or preparation task, like packing a lunch or wearing sneakers)
-            
-            Return ONLY a valid JSON array of objects. Do not include markdown formatting or backticks.
-            Keys:
-            - "task_name" (string)
-            - "task_type" (string: either 'Event', 'Deadline', or 'To-Do')
-            - "date" (string, format YYYY-MM-DD. Note: Current year is 2026)
-            - "child_name" (string, e.g. Eleanor, Hazel)
-            
-            Email snippet: {snippet}
-            """
-            
+            combined_email_payload.append({
+                "email_id": msg['id'],
+                "content": snippet
+            })
+
+        # 2. Fire ONE single batch prompt to Gemini outside the loop
+        batch_prompt = f"""
+        You are an expert administrative assistant. Analyze this collection of school email snippets and extract all actionable items, events, and due dates.
+        
+        Emails to analyze:
+        {json.dumps(combined_email_payload, indent=2)}
+
+        For each extracted item, return a JSON array containing objects with these exact keys:
+        - 'task_name': clear descriptive name
+        - 'due_date': YYYY-MM-DD formatting if found
+        - 'child_name': name of child if inferred
+        - 'task_type': 'Event', 'Deadline', or 'To-Do'
+        """
+
+        # 3. Call Gemini once here using your model client wrapper
+        # response_data = call_gemini_model(batch_prompt)
+        
+        # 4. Loop through the returned batch array and insert rows into Supabase
+        # (This uses 0 Gemini tokens!) 
             response = ai_client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
             clean_text = response.text.replace("```json", "").replace("```", "").strip()
             
