@@ -43,10 +43,15 @@ REDIRECT_URI = "http://127.0.0.1:8000/callback"
 
 
 # 3. THE WEB ROUTING ENDPOINTS
-@app.get("/")  # <-- Removed response_class=HTMLResponse
+@app.get("/")
 def serve_dashboard(request: Request):
     """Serves the main frontend UI."""
-    return templates.TemplateResponse("index.html", {"request": request})
+    # 🛠️ FIX: Use explicit keyword arguments to comply with recent FastAPI/Starlette signatures
+    return templates.TemplateResponse(
+        request=request, 
+        name="index.html", 
+        context={"request": request}
+    )
 
 @app.get("/login")
 def login(user_id: str, request: Request):
