@@ -3,94 +3,135 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Family AI Agent</title>
+    <title>Family Command Center</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans p-8">
 
-    <div class="max-w-3xl mx-auto">
-        <header class="mb-10 text-center">
-            <h1 class="text-4xl font-extrabold text-indigo-600 mb-2">Family Calendar Agent 🤖</h1>
-            <p class="text-slate-500">Autonomous inbox scanning and event extraction.</p>
+    <div class="max-w-4xl mx-auto">
+        <header class="mb-8 text-center md:text-left flex flex-col md:flex-row md:items-center md:justify-between border-b border-slate-200 pb-6">
+            <div>
+                <h1 class="text-4xl font-extrabold text-indigo-600 mb-1">Family Command Center 🤖</h1>
+                <p class="text-slate-500">Autonomous extraction, scheduling, and execution tracking.</p>
+            </div>
+            <div class="mt-4 md:mt-0">
+                {% if is_connected %}
+                    <span class="inline-flex items-center gap-x-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 border border-emerald-200">
+                        <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Active Connection
+                    </span>
+                {% else %}
+                    <button onclick="window.location.href='/login?user_id={{ user_id }}'" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-5 rounded-lg text-sm transition-all shadow-sm">Connect Google Account</button>
+                {% endif %}
+            </div>
         </header>
 
-        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 space-y-8">
-            
-            <div class="flex items-center justify-between border-b border-slate-100 pb-6">
-                <div>
-                    <h2 class="text-xl font-bold">Google Connection</h2>
-                    <p class="text-sm text-slate-500">Link your Gmail & Calendar</p>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="space-y-6 lg:col-span-1">
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                    <h2 class="text-lg font-bold mb-4">Agent Rules</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Sender Target</label>
+                            <input type="text" id="sender-input" value="{{ sender }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Tracked Keywords</label>
+                            <input type="text" id="keywords-input" value="{{ keywords }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none">
+                        </div>
+                        <button onclick="saveConfig()" class="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold py-2 rounded-lg text-sm transition-colors">Save Rule Adjustments</button>
+                        <p id="save-status" class="text-xs text-center text-emerald-600 font-medium hidden">✨ Rules updated in Supabase!</p>
+                    </div>
                 </div>
-                <div>
-                    {% if is_connected %}
-                        <span class="inline-flex items-center gap-x-1.5 rounded-md bg-emerald-100 px-3 py-1.5 text-sm font-semibold text-emerald-800">
-                            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                            Active & Connected
-                        </span>
+
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 text-center">
+                    <h3 class="font-bold text-slate-700 mb-2">Manual Sweep Trigger</h3>
+                    <p class="text-xs text-slate-500 mb-4">Force the backend AI engine to scan your inbox right now instead of waiting for the cron sequence.</p>
+                    <button onclick="triggerSweep()" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors shadow-sm">🚀 Run Inbox Sweep</button>
+                    <p id="sweep-status" class="text-xs font-semibold mt-3 text-indigo-600 hidden">Sweep requested! Refreshing view shortly...</p>
+                </div>
+            </div>
+
+            <div class="lg:col-span-2 space-y-6">
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                    <h2 class="text-xl font-bold mb-4">Extracted Family Agenda</h2>
+                    
+                    {% if not tasks %}
+                        <div class="text-center py-12 border-2 border-dashed border-slate-200 rounded-xl">
+                            <p class="text-slate-400 text-sm">No tasks or agenda items extracted yet.</p>
+                            <p class="text-xs text-slate-400 mt-1">Run a manual sweep or wait for inbox activity.</p>
+                        </div>
                     {% else %}
-                        <button onclick="window.location.href='/login?user_id={{ user_id }}'" 
-                                class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-6 rounded-lg transition-colors shadow-sm">
-                            Connect Account
-                        </button>
+                        <div class="space-y-3">
+                            {% for task in tasks %}
+                                <div class="flex items-start gap-3 p-4 rounded-xl border border-slate-100 {% if task.status == 'completed' %}bg-slate-50/70 border-slate-200/50 opacity-60{% else %}bg-white shadow-sm hover:border-slate-300{% endif %} transition-all">
+                                    <input type="checkbox" 
+                                           class="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                           {% if task.status == 'completed' %}checked{% endif %}
+                                           onclick="toggleTask('{{ task.id }}', this)">
+                                    
+                                    <div class="flex-1 min-w-0">
+                                        <div class="flex items-center gap-2 flex-wrap">
+                                            <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                                                {{ task.child_name }}
+                                            </span>
+                                            
+                                            {% if task.task_type == 'Event' %}
+                                                <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">📅 Event</span>
+                                            {% elif task.task_type == 'Deadline' %}
+                                                <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-rose-50 text-rose-700 border border-rose-100">🚨 Deadline</span>
+                                            {% else %}
+                                                <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-100">📝 To-Do</span>
+                                            {% endif %}
+
+                                            {% if task.due_date %}
+                                                <span class="text-xs text-slate-400 ml-auto font-medium">Due: {{ task.due_date }}</span>
+                                            {% endif %}
+                                        </div>
+                                        <p class="text-sm font-semibold mt-1.5 text-slate-900 {% if task.status == 'completed' %}line-through text-slate-400{% endif %}">
+                                            {{ task.task_name }}
+                                        </p>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
                     {% endif %}
                 </div>
             </div>
-
-            <div class="border-b border-slate-100 pb-8">
-                <h2 class="text-xl font-bold mb-4">Agent Rules</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-semibold text-slate-600 mb-1">Target Sender Domain</label>
-                        <input type="text" id="sender-input" value="{{ sender }}" class="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm focus:border-indigo-500 focus:outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-slate-600 mb-1">Keywords (Comma separated)</label>
-                        <input type="text" id="keywords-input" value="{{ keywords }}" class="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm focus:border-indigo-500 focus:outline-none">
-                    </div>
-                </div>
-                <div class="mt-4 text-right">
-                    <button onclick="saveConfig()" class="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold py-2 px-4 rounded-lg text-sm transition-colors">
-                        Save Rules
-                    </button>
-                    <span id="save-status" class="text-xs text-emerald-600 ml-2 hidden">✨ Saved to Supabase!</span>
-                </div>
-            </div>
-
-            <div class="bg-slate-50 rounded-xl p-6 border border-slate-200 text-center">
-                <h3 class="font-semibold mb-2">Manual Agent Override</h3>
-                <p class="text-sm text-slate-500 mb-4">Force the AI to scan your inbox right now instead of waiting for the background schedule.</p>
-                
-                <button onclick="triggerSweep()" class="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-6 rounded-lg transition-colors shadow-sm">
-                    🚀 Run Inbox Sweep
-                </button>
-                <p id="sweep-status" class="text-sm font-medium mt-3 text-indigo-600 hidden">Sweep initiated! Checking logs...</p>
-            </div>
-
         </div>
     </div>
 
     <script>
         async function triggerSweep() {
             document.getElementById('sweep-status').classList.remove('hidden');
-            setTimeout(() => document.getElementById('sweep-status').classList.add('hidden'), 5000);
             await fetch('/api/agent/trigger-sweep', { method: 'POST' });
+            setTimeout(() => window.location.reload(), 3000);
         }
 
         async function saveConfig() {
             const sender = document.getElementById('sender-input').value;
             const keywords = document.getElementById('keywords-input').value;
-            
-            // We will build this simple endpoint next!
             const res = await fetch('/api/agent/save-config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ user_id: "{{ user_id }}", sender, keywords })
             });
-            
             if (res.ok) {
                 const badge = document.getElementById('save-status');
                 badge.classList.remove('hidden');
                 setTimeout(() => badge.classList.add('hidden'), 3000);
+            }
+        }
+
+        async function toggleTask(taskId, checkbox) {
+            const status = checkbox.checked ? 'completed' : 'pending';
+            const res = await fetch('/api/agent/tasks/toggle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_id: taskId, status: status })
+            });
+            if (res.ok) {
+                // Instantly refresh the visual lists to reflect state sorting
+                window.location.reload();
             }
         }
     </script>

@@ -52,6 +52,21 @@ def save_config(payload: ConfigPayload):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+# Data model to handle toggle updates from the frontend checkboxes
+class TaskTogglePayload(BaseModel):
+    task_id: str
+    status: str
+
+@app.post("/api/agent/tasks/toggle")
+def toggle_task_status(payload: TaskTogglePayload):
+    """Updates a task's status ('pending' vs 'completed') from the UI."""
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database offline.")
+    try:
+        supabase.table("user_tasks").update({"status": payload.status}).eq("id", payload.task_id).execute()
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 # 2. CLOUD DATABASE & INTEGRATIONS CONFIG
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -69,24 +84,28 @@ REDIRECT_URI = "http://127.0.0.1:8000/callback"
 # 3. THE WEB ROUTING ENDPOINTS
 @app.get("/")
 def serve_dashboard(request: Request):
-    """Fetches user configuration from Supabase and renders the UI."""
-    # Use your testing account ID
+    """Fetches user configuration and live tasks from Supabase to render the main UI."""
     test_user_id = "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
-    
     current_sender = "*@seattleschools.org"
     current_keywords = "Eleanor"
     is_connected = False
+    tasks = []
 
     try:
         if supabase:
-            response = supabase.table("users_config").select("*").eq("user_id", test_user_id).execute()
-            if response.data:
-                user_data = response.data[0]
+            # Fetch user configurations
+            config_res = supabase.table("users_config").select("*").eq("user_id", test_user_id).execute()
+            if config_res.data:
+                user_data = config_res.data[0]
                 current_sender = user_data.get("target_sender", current_sender)
                 current_keywords = user_data.get("target_keywords", current_keywords)
-                # If they have tokens saved, consider them connected
                 if user_data.get("encrypted_gmail_token"):
                     is_connected = True
+            
+            # Fetch active family tasks sorted by due date
+            tasks_res = supabase.table("user_tasks").select("*").eq("user_id", test_user_id).order("due_date").execute()
+            tasks = tasks_res.data if tasks_res.data else []
+            
     except Exception as e:
         print(f"⚠️ Error fetching UI configurations: {e}")
 
@@ -98,9 +117,11 @@ def serve_dashboard(request: Request):
             "user_id": test_user_id,
             "sender": current_sender,
             "keywords": current_keywords,
-            "is_connected": is_connected
+            "is_connected": is_connected,
+            "tasks": tasks
         }
     )
+
 
 @app.get("/login")
 def login(user_id: str, request: Request):
@@ -230,9 +251,10 @@ def execute_all_user_sweeps():
     except Exception as e:
         print(f"❌ Error during global cloud sweep loop: {e}")
 
+
 def run_agent_cycle(creds, sender_filter, keyword_filter):
-    """Fetches emails, extracts data via Gemini, and writes to Google Calendar."""
-    print("\n🤖 --- Booting up Full Agent Cycle ---")
+    """Fetches emails, extracts tasks via Gemini, and saves them natively to Supabase."""
+    print("\n🤖 --- Booting up Full Task Extraction Cycle ---")
     
     gemini_api_key = os.environ.get("GEMINI_API_KEY")
     if not gemini_api_key:
@@ -244,7 +266,7 @@ def run_agent_cycle(creds, sender_filter, keyword_filter):
     ai_client = genai.Client(api_key=gemini_api_key)
 
     try:
-        # 1. READ GMAIL
+        # 1. Read the Gmail inbox
         gmail_service = build('gmail', 'v1', credentials=creds)
         query = f"from:{sender_filter} ({keyword_filter}) newer_than:2d"
         results = gmail_service.users().messages().list(userId='me', q=query).execute()
@@ -254,49 +276,57 @@ def run_agent_cycle(creds, sender_filter, keyword_filter):
             print("📭 No new matching school emails found in the last 48 hours.")
             return
 
-        print(f"📬 Found {len(messages)} matching emails. Processing...")
+        print(f"📬 Found {len(messages)} matching emails to process.")
         
-        # 2. INITIALIZE CALENDAR
-        calendar_service = build('calendar', 'v3', credentials=creds)
-        
+        # Grab the user_id dynamically from the credential wrapper or database mapping context
+        # For testing purposes, we map to your test UUID
+        user_id = "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
+
         for msg in messages:
             msg_detail = gmail_service.users().messages().get(userId='me', id=msg['id'], format='snippet').execute()
             snippet = msg_detail.get('snippet', '')
             
+            # Expanded prompt instructing Gemini to categorize items into actionable tasks
             prompt = f"""
-            Extract any upcoming events, dates, and times related to the students from this school email.
-            Return ONLY a valid JSON array of objects. Do not include markdown formatting.
+            Analyze this school email snippet and extract all actions, events, and due dates into a structured list.
+            Categorize each item into one of three types:
+            1. 'Event' (An absolute date/time you must physically show up for)
+            2. 'Deadline' (A hard cut-off date to turn something in, like library books or permission forms)
+            3. 'To-Do' (An action item or preparation task, like packing a lunch or wearing sneakers)
+            
+            Return ONLY a valid JSON array of objects. Do not include markdown formatting or backticks.
             Keys:
-            - "event_name" (string)
+            - "task_name" (string)
+            - "task_type" (string: either 'Event', 'Deadline', or 'To-Do')
             - "date" (string, format YYYY-MM-DD. Note: Current year is 2026)
             - "child_name" (string, e.g. Eleanor, Hazel)
             
             Email snippet: {snippet}
             """
             
-            # 3. ASK GEMINI
             response = ai_client.models.generate_content(model='gemini-2.5-flash', contents=prompt)
             clean_text = response.text.replace("```json", "").replace("```", "").strip()
             
             try:
-                events = json.loads(clean_text)
+                extracted_tasks = json.loads(clean_text)
                 
-                # 4. WRITE TO CALENDAR
-                for event in events:
-                    event_body = {
-                        'summary': f"[{event.get('child_name', 'School')}] {event.get('event_name', 'Event')}",
-                        'start': {'date': event.get('date')},
-                        'end': {'date': event.get('date')} # Using all-day events for simplicity and robustness
-                    }
-                    
-                    created_event = calendar_service.events().insert(calendarId='primary', body=event_body).execute()
-                    print(f"✅ CALENDAR BOOKED: {created_event.get('summary')} on {event.get('date')}")
-                    print(f"🔗 Link: {created_event.get('htmlLink')}")
-                    
+                # 2. Insert items directly into Supabase
+                for task in extracted_tasks:
+                    if supabase:
+                        supabase.table("user_tasks").insert({
+                            "user_id": user_id,
+                            "child_name": task.get("child_name", "Both"),
+                            "task_name": task.get("task_name"),
+                            "task_type": task.get("task_type", "To-Do"),
+                            "due_date": task.get("date"),
+                            "status": "pending"
+                        }).execute()
+                        print(f"💾 NATIVE TASK SAVED: [{task.get('child_name')}] {task.get('task_name')}")
+                        
             except json.JSONDecodeError:
                 print(f"⚠️ Could not parse Gemini output into JSON: {clean_text}")
 
-        print("\n🏁 Agent Cycle Complete.")
+        print("\n🏁 Task Agent Cycle Complete.")
 
     except Exception as e:
         print(f"❌ Error during agent cycle: {e}")
