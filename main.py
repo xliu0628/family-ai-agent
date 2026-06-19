@@ -284,6 +284,7 @@ def execute_all_user_sweeps():
             email_address = email_account.get("email_address")
             encrypted_token = email_account.get("encrypted_gmail_token")
             
+           print(f"Checking profile: {user.get('email')}")
             # 🛑 ADD THIS GUARD CLAUSE
             if not encrypted_token:
                print(f"⚠️ Skipping user {user.get('id')}: No token found.")
@@ -336,7 +337,6 @@ def run_agent_cycle(creds, user_id, sender_filter, keyword_filter):
         
         # Grab the user_id dynamically from the credential wrapper or database mapping context
         # For testing purposes, we map to your test UUID
-        user_id = "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"
 
         for msg in messages:
             msg_detail = gmail_service.users().messages().get(userId='me', id=msg['id'], format='metadata').execute()
